@@ -15,8 +15,9 @@
 package com.palantir.common.remoting;
 
 /**
- * If a server is shutting down or cannot respond to a call for another reson this exception may be thrown.
- * This exception indicates to the caller that this call should be retried on another server that is available.
+ * If a server is shutting down or cannot respond to a call for another reason this exception may be
+ * thrown. This exception indicates to the caller that this call should be retried on another server
+ * that is available.
  *
  * @author carrino
  */

@@ -15,9 +15,14 @@
 package com.palantir.atlasdb.keyvalue.cassandra;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.annotation.Nonnull;
 import javax.net.ssl.SSLSocket;
@@ -37,7 +42,9 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.base.MoreObjects;
 import com.palantir.common.base.FunctionCheckedException;
+import com.palantir.common.concurrent.PTExecutors;
 import com.palantir.common.pooling.AbstractPoolingContainer;
+import com.palantir.common.remoting.ServiceNotAvailableException;
 
 /**
  * This class will run the passed function with a valid client with an open socket.  An open socket
@@ -59,6 +66,8 @@ public class CassandraClientPoolingContainer extends AbstractPoolingContainer<Cl
     final int port;
     final boolean isSsl;
     final AtomicLong count = new AtomicLong();
+    final AtomicReference<Exception> waitingForGoodConnectionException =  new AtomicReference<Exception>();
+    final ExecutorService executor = PTExecutors.newSingleThreadExecutor(true);
 
     public CassandraClientPoolingContainer(String host, int port, int poolSize, String keyspace, boolean isSsl) {
         super(poolSize);
@@ -79,9 +88,19 @@ public class CassandraClientPoolingContainer extends AbstractPoolingContainer<Cl
     }
 
     @Override
+    public void shutdownPooling() {
+        executor.shutdown();
+        super.shutdownPooling();
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public <V, K extends Exception> V runWithPooledResource(FunctionCheckedException<Client, V, K> f)
             throws K {
+        Exception unavailableException = waitingForGoodConnectionException.get();
+        if (unavailableException != null) {
+            throw new ServiceNotAvailableException("Blocking until this connection is good.", unavailableException);
+        }
         final String origName = Thread.currentThread().getName();
         Thread.currentThread().setName(origName
                 + " calling cassandra host " + host
@@ -105,21 +124,17 @@ public class CassandraClientPoolingContainer extends AbstractPoolingContainer<Cl
     private <V, K extends Exception> V runWithGoodResource(FunctionCheckedException<Client, V, K> f)
             throws K {
         boolean shouldReuse = true;
-        Client resource = getGoodClient();
+        final Client resource = this.<K>getGoodClient();
 
         try {
             return f.apply(resource);
         } catch (Exception e) {
             if (e instanceof TTransportException
                     || e instanceof TProtocolException) {
-                log.warn("Not reusing resource {} due to {}", resource, e);
+                log.warn("Not reusing resource " + resource, e);
                 shouldReuse = false;
             }
-            if (e instanceof TTransportException
-                    && ((TTransportException) e).getType() == TTransportException.END_OF_FILE) {
-                // If we have an end of file this is most likely due to this cassandra node being bounced.
-                discardCurrentPool();
-            }
+            discardPoolIfNeeded(e);
             throw (K) e;
         } finally {
             if (shouldReuse) {
@@ -132,22 +147,86 @@ public class CassandraClientPoolingContainer extends AbstractPoolingContainer<Cl
         }
     }
 
-    private Client getGoodClient() {
-        Client resource = null;
-        do {
-            if (resource != null) {
-                cleanupForDiscard(resource);
+    private void discardPoolIfNeeded(Exception e) {
+        if (!(e instanceof TTransportException)) {
+            return;
+        }
+        TTransportException te = (TTransportException) e;
+
+        if (te.getType() == TTransportException.END_OF_FILE || te.getCause() instanceof ConnectException) {
+            if (waitingForGoodConnectionException.compareAndSet(null, e)) {
+                // If we are the first one to detect a connection issue we kick off the task to
+                // monitor to see when connections become ok again.  While this is set we throw
+                // ServiceNotAvailableException.
+                submitConenctTask();
+                discardCurrentPool();
             }
-            resource = getResource();
-        } while (!resource.getOutputProtocol().getTransport().isOpen());
-        return resource;
+        } else if (te.getCause() instanceof SocketTimeoutException) {
+            // If we have a socket timeout we may be in the case where we can not talk to a node
+            // anymore.  If this is the case we should close all pooled connections and get fresh
+            // connections for all future requests.  This means the next request will cause a
+            // ConnectException instead which will trigger the ServiceNotAvailableException.
+            discardCurrentPool();
+        }
+    }
+
+    private void submitConenctTask() {
+        if (executor.isShutdown()) {
+            waitingForGoodConnectionException.set(null);
+            return;
+        }
+        try {
+            executor.submit(new Callable<Void>() {
+                @Override
+                public Void call() throws Exception {
+                    try {
+                        while (true) {
+                            try {
+                                Client client = getClient(host, port, keyspace, isSsl);
+                                cleanupClient(client);
+                                return null;
+                            } catch (Throwable t) {
+                                log.info("Failed while blocking.");
+                            }
+                        }
+                    } finally {
+                        waitingForGoodConnectionException.set(null);
+                    }
+                }
+            });
+        } catch (Throwable t) {
+            waitingForGoodConnectionException.set(null);
+            log.info("Failed to submit task.", t);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private <K extends Exception> Client getGoodClient() throws K {
+        try {
+            Client resource = null;
+            do {
+                if (resource != null) {
+                    cleanupForDiscard(resource);
+                }
+                resource = getResource();
+            } while (!resource.getOutputProtocol().getTransport().isOpen());
+            return resource;
+        } catch (Exception e) {
+            log.warn("Could not connect to host.", e);
+            discardPoolIfNeeded(e);
+            throw (K) e;
+        }
     }
 
     @Override
     protected void cleanupForDiscard(Client discardedResource) {
-        discardedResource.getOutputProtocol().getTransport().close();
+        cleanupClient(discardedResource);
         log.info("Closed transport for client {}", discardedResource);
         super.cleanupForDiscard(discardedResource);
+    }
+
+    static void cleanupClient(Client toClean) {
+        toClean.getOutputProtocol().getTransport().close();
     }
 
     static class ClientCreationFailedException extends RuntimeException {
@@ -170,7 +249,7 @@ public class CassandraClientPoolingContainer extends AbstractPoolingContainer<Cl
             log.info("Created new client for {}:{}/{} {}", host, port, keyspace, (isSsl ? "over SSL" : ""));
             return ret;
         } catch (Exception e) {
-            ret.getOutputProtocol().getTransport().close();
+            cleanupClient(ret);
             throw e;
         }
     }

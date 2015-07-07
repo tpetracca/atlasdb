@@ -66,7 +66,7 @@ public class CassandraVerifier {
                 log.warn("failed to get ring info from host: " + host, e);
             } finally {
                 if (client != null) {
-                    client.getOutputProtocol().getTransport().close();
+                    CassandraClientPoolingContainer.cleanupClient(client);
                 }
             }
         }

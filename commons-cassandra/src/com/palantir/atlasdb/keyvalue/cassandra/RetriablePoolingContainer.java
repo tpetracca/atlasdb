@@ -30,6 +30,7 @@ import com.palantir.atlasdb.keyvalue.cassandra.CassandraClientPoolingContainer.C
 import com.palantir.common.base.FunctionCheckedException;
 import com.palantir.common.pooling.ForwardingPoolingContainer;
 import com.palantir.common.pooling.PoolingContainer;
+import com.palantir.common.remoting.ServiceNotAvailableException;
 
 public class RetriablePoolingContainer extends ForwardingPoolingContainer<Client> {
     private static final Logger log = LoggerFactory.getLogger(RetriablePoolingContainer.class);
@@ -53,8 +54,7 @@ public class RetriablePoolingContainer extends ForwardingPoolingContainer<Client
             try {
                 return super.runWithPooledResource(f);
             } catch (Exception e) {
-                numTries++;
-                this.<K>handleException(numTries, e);
+                numTries = this.<K>handleException(numTries, e);
             }
         }
     }
@@ -67,7 +67,12 @@ public class RetriablePoolingContainer extends ForwardingPoolingContainer<Client
     }
 
     @SuppressWarnings("unchecked")
-    private <K extends Exception> void handleException(int numTries, Exception e) throws K {
+    private <K extends Exception> int handleException(int inputTries, Exception e) throws K {
+        if (e instanceof ServiceNotAvailableException) {
+            log.debug("service was down, will retry.", e);
+            return inputTries;
+        }
+        final int numTries = inputTries + 1;
         if (e instanceof ClientCreationFailedException
                 || e instanceof TTransportException
                 || e instanceof TimedOutException
@@ -96,10 +101,11 @@ public class RetriablePoolingContainer extends ForwardingPoolingContainer<Client
                         Thread.currentThread().interrupt();
                     }
                 }
+                return numTries;
             }
-        } else {
-            throw (K) e;
         }
+
+        throw (K) e;
     }
 
 }
