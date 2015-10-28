@@ -69,7 +69,8 @@ public class StaticTableMappingService extends AbstractTableMappingService {
         // any name is ok for the static mapper
     }
 
-    public static TableReference getTableReference(String tableName) {
+    @Override
+    public TableReference getTableReference(String tableName) {
         if (tableName.contains(".")) {
             List<String> split = Splitter.on('.').limit(2).splitToList(tableName);
             return TableReference.create(Namespace.create(split.get(0)), split.get(1));

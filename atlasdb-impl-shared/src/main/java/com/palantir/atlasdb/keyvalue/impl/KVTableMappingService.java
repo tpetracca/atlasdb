@@ -15,7 +15,10 @@
  */
 package com.palantir.atlasdb.keyvalue.impl;
 
+import java.util.List;
+
 import com.google.common.base.Preconditions;
+import com.google.common.base.Splitter;
 import com.google.common.base.Supplier;
 import com.google.common.collect.BiMap;
 import com.google.common.collect.HashBiMap;
@@ -130,6 +133,19 @@ public class KVTableMappingService extends AbstractTableMappingService {
             range.close();
         }
         return ret;
+    }
+
+    @Override
+    public TableReference getTableReference(String tableName) {
+        if (tableName.contains(".")) {
+            List<String> split = Splitter.on('.').limit(2).splitToList(tableName);
+            return TableReference.create(Namespace.innerCreate(split.get(0)), split.get(1));
+        }
+        // and for pg we will allow _met to be empty namespace
+        if (AtlasDbConstants.hiddenTables.contains(tableName)) {
+            return TableReference.createWithEmptyNamespace(tableName);
+        }
+        return TableReference.create(Namespace.DEFAULT_NAMESPACE, tableName);
     }
 
 }
