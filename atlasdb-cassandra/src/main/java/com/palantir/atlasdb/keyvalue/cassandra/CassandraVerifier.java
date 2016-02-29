@@ -48,7 +48,6 @@ import com.palantir.atlasdb.keyvalue.cassandra.CassandraClientFactory.ClientCrea
 import com.palantir.common.base.FunctionCheckedException;
 import com.palantir.common.collect.Maps2;
 
-
 public class CassandraVerifier {
     private static final Logger log = LoggerFactory.getLogger(CassandraVerifier.class);
 

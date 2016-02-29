@@ -153,7 +153,7 @@ public class CQLKeyValueService extends AbstractKeyValueService {
         clusterBuilder.withClusterName("atlas_cassandra_cluster_" + config.keyspace()); // for JMX metrics
         clusterBuilder.withCompression(Compression.LZ4);
 
-        if (config.ssl()) {
+        if (config.ssl().isPresent()) {
             clusterBuilder.withSSL();
         }
 

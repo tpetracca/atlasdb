@@ -23,6 +23,7 @@ import com.palantir.atlasdb.cleaner.AbstractSweeperTest;
 import com.palantir.atlasdb.keyvalue.api.KeyValueService;
 
 public class CQLKeyValueServiceSweeperTest extends AbstractSweeperTest {
+
     @Override
     protected KeyValueService getKeyValueService() {
         return CQLKeyValueService.create(
@@ -31,7 +32,6 @@ public class CQLKeyValueServiceSweeperTest extends AbstractSweeperTest {
                                 .addServers(new InetSocketAddress("localhost", 9042))
                                 .poolSize(20)
                                 .keyspace("atlasdb")
-                                .ssl(false)
                                 .replicationFactor(1)
                                 .mutationBatchCount(10000)
                                 .mutationBatchSizeBytes(10000000)
@@ -40,4 +40,5 @@ public class CQLKeyValueServiceSweeperTest extends AbstractSweeperTest {
                                 .autoRefreshNodes(false)
                                 .build()));
     }
+    
 }

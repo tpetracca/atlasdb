@@ -33,7 +33,6 @@ public class CassandraKeyValueServiceSerializableTransactionTest extends
                                 .addServers(new InetSocketAddress("localhost", 9160))
                                 .poolSize(20)
                                 .keyspace("atlasdb")
-                                .ssl(false)
                                 .replicationFactor(1)
                                 .mutationBatchCount(10000)
                                 .mutationBatchSizeBytes(10000000)
