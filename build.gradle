@@ -24,7 +24,8 @@ plugins {
 apply from: 'gradle/versions.gradle'
 
 group = 'com.palantir.atlasdb'
-version = gitVersion()
+//version = gitVersion()
+version = 'backup-0'
 description = 'Transactional distributed database layer'
 
 task clean(type: Delete) {
