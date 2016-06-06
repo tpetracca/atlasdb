@@ -24,7 +24,7 @@ plugins {
 apply from: 'gradle/versions.gradle'
 
 group = 'com.palantir.atlasdb'
-version = 'alpha-0'
+version = 'alpha-1'
 
 task clean(type: Delete) {
     delete buildDir
