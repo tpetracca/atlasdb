@@ -87,6 +87,7 @@ public class CassandraClientPoolingContainer implements PoolingContainer<Client>
     private <V, K extends Exception> V runWithGoodResource(FunctionCheckedException<Client, V, K> f)
             throws K {
         boolean shouldReuse = true;
+        boolean poolCleared = false;
         Client resource = null;
         try {
             resource = clientPool.borrowObject();
@@ -99,11 +100,13 @@ public class CassandraClientPoolingContainer implements PoolingContainer<Client>
             if (e instanceof TTransportException
                     && ((TTransportException) e).getType() == TTransportException.END_OF_FILE) {
                 // If we have an end of file this is most likely due to this cassandra node being bounced.
+                log.warn("Clearing client pool for host {} because of EOF TTransportException", host.toString());
                 clientPool.clear();
+                poolCleared = true;
             }
             throw (K) e;
         } finally {
-            if (resource != null) {
+            if (resource != null && !poolCleared) {
                 if (shouldReuse) {
                     log.debug("Returning {} to pool", resource);
                     clientPool.returnObject(resource);
