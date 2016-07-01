@@ -732,13 +732,15 @@ public class CassandraKeyValueService extends AbstractKeyValueService {
                                                                         SlicePredicate pred,
                                                                         ConsistencyLevel consistency) throws TException {
         Map<ByteBuffer, List<ColumnOrSuperColumn>> results;
-        if (shouldTraceQuery(tableRef)) {
+        //if (shouldTraceQuery(tableRef)) {
+        if (true) {
             ByteBuffer recv_trace = client.trace_next_query();
             Stopwatch stopwatch = Stopwatch.createStarted();
             try {
                 results = client.multiget_slice(rowNames, colFam, pred, consistency);
             } catch (Exception e) {
-                log.error("A call to cassandra that we were tracing with UUID={} threw an exception",
+                log.error("A call to {} that we were tracing with UUID={} threw an exception",
+                        tableRef.getQualifiedName(),
                         CassandraKeyValueServices.convertCassandraByteBufferUUIDtoString(recv_trace));
                 logTraceResults(stopwatch.elapsed(TimeUnit.MILLISECONDS), tableRef, recv_trace, true);
                 throw e;
