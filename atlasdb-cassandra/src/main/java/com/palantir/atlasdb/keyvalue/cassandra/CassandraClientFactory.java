@@ -107,7 +107,8 @@ public class CassandraClientFactory extends BasePooledObjectFactory<Client> {
         Client ret = getClientInternal(addr, creds, isSsl, socketTimeoutMillis, socketQueryTimeoutMillis);;
         try {
             ret.set_keyspace(keyspace);
-            log.debug("Created new client for {}/{} {} {}", addr, keyspace, (isSsl ? "over SSL" : ""),
+            log.debug("Created new client with query timeout of {}ms for {}/{} {} {}",
+                    socketQueryTimeoutMillis, addr, keyspace, (isSsl ? "over SSL" : ""),
                     creds.isPresent() ? " as user " + creds.get().username() : "");
             return ret;
         } catch (Exception e) {
@@ -174,7 +175,9 @@ public class CassandraClientFactory extends BasePooledObjectFactory<Client> {
 
     @Override
     public boolean validateObject(PooledObject<Client> client) {
-        return client.getObject().getOutputProtocol().getTransport().isOpen();
+        boolean isValid = client.getObject().getOutputProtocol().getTransport().isOpen();
+        log.debug("isValid for client {}: {}", client.getObject(), isValid);
+        return isValid;
     }
 
     @Override
